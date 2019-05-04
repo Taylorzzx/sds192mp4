@@ -1,0 +1,134 @@
+---
+title: "Is Being a Female Director THAT Hard?"
+author: "Yuhan Shangguan, Taylor Zhang, Catherine Kung"
+date: "5/3/2019"
+output:
+ html_document:
+   code_folding: hide
+---
+![Amy Adrion](https://hips.hearstapps.com/hmg-prod.s3.amazonaws.com/images/aa-1528707618.jpg?crop=1xw:1xh;center,top&resize=768:*)
+```{r, message=FALSE}
+library(tidyverse)
+library(RMySQL)
+library(ggplot2)
+library(ggthemes)
+```
+
+```{r}
+db <- dbConnect(MySQL(), 
+                host = "scidb.smith.edu", 
+                user = "mth292", 
+                password = "RememberPi", 
+                dbname = "imdb")
+knitr::opts_chunk$set(connection = db, max.print = 20)
+
+# Use index on role_id and idx_mid
+
+femaleHigh <- db %>%
+ dbGetQuery("SELECT production_year as year, count(*) as female
+FROM name n
+Join cast_info c on n.id = c.person_id
+Join title t on c.movie_id = t.id
+JOIN movie_info_idx mi ON mi.movie_id = t.id
+WHERE gender = 'f' and role_id = 8 and (production_year between 2000 and 2017) and mi.info > 9.0
+Group by production_year
+Limit 1, 20")
+
+# Use index on role_id
+
+femaleTotal <- db %>%
+ dbGetQuery("SELECT production_year as year, count(*) as female
+FROM name n
+Join cast_info c on n.id = c.person_id
+Join title t on c.movie_id = t.id
+WHERE gender = 'f' and role_id = 8 and (production_year between 2000 and 2017)
+Group by production_year
+Limit 1, 20")
+
+# Use index on role_id and idx_mid
+
+MaleHigh <- db %>%
+ dbGetQuery("SELECT production_year as year, count(*) as male
+FROM name n
+Join cast_info c on n.id = c.person_id
+Join title t on c.movie_id = t.id
+JOIN movie_info_idx mi ON mi.movie_id = t.id
+WHERE gender = 'm' and role_id = 8 and (production_year between 2000 and 2017) and mi.info > 9.0
+Group by production_year
+Limit 1, 20")
+
+# Use index on role_id
+
+MaleTotal <- db %>%
+ dbGetQuery("SELECT production_year as year, count(*) as male
+FROM name n
+Join cast_info c on n.id = c.person_id
+Join title t on c.movie_id = t.id
+WHERE gender = 'm' and role_id = 8 and (production_year between 2000 and 2017)
+Group by production_year
+Limit 1, 20")
+
+#table1 and table2 are steps necessary for tidy data
+
+table1 <- MaleTotal %>%
+  left_join(femaleTotal, by = 'year')%>%
+  gather(key = "gender", value = "number", -year)
+
+table2 <-MaleHigh %>%
+  left_join(femaleHigh, by = 'year')%>%
+  gather(key = "gender", value = "Rating_Above_9", -year)
+```
+
+```{r}
+table <- table1 %>%
+  inner_join(table2, by = c("year", "gender"))%>%
+  mutate(percentage = Rating_Above_9*100/number)
+```
+
+##Problem statement 
+We examined the imdb table and mainly focused on the relationship between producing highly-rated movies and the gender of directors, along with a glimpse of the total number of women and men in the industry. We wonder what the extent of gender disparity in the industry is, and whether or not men genuinely do better at directing movies than women.
+
+##Background
+Examining the gender disparity within the film industry has been our main target, while news and articles have demonstrated the same situation we want to explore. In fact, the documentary produced by Amy Adrion, Half the Picture, calls out ingrained sexism in the entertainment industry in 2015. Some people criticized that women were too sensitive about it, but Adrion claimed that these people “ just didn’t really believe that this kind of systemic discrimination exists.” However, with the #Metoo uprising last year, gender imparity became Hollywood’s top agenda. According to Adrion, the documentary features infographics illustrating the depth of Hollywood’s gender disparity. She explained, "You feel bad for these women because they are so smart and talented...You realize what a loss it is that they haven’t been able to contribute to our culture as much as they should." [(Omar,2018)](https://www.harpersbazaar.com/uk/culture/entertainment/a21264167/why-there-are-so-few-female-directors-working-in-hollywood/). 
+
+Besides, female directors have less chance to get access to big movies. In particular, last year’s report from the Media, Diversity and Social Change Initiative at USC Annenberg, found that women directed only 4.1 percent of the annual top 100 films at the box office from 2007 to 2015^[[Article](https://fivethirtyeight.com/features/three-reasons-wonder-woman-has-already-made-history/) from ‘Three Reasons ‘Wonder Woman’ Has Already Made History’]. Hence, the female director is facing discrimination and having less access to the production of big movies. As the result, the percentage for female directors involving in movies that possess potentials to achieve good ratings is smaller than that of the male directors.
+
+##Description of the table 
+The tables that we joined together was the name table from which we derived the gender of each director, the movie info index table from which we derived the rating, the title table where we got the production year and filter the film productions to only movies, and cast info that served as a bridge to connect the title table and the name table. The total number of director for a gender was given after using count(*) on one table that has been filtered for one gender and grouped by production year. The number of directors that got more than a ranking of 9 for their movies was achieved by filtering yet another condition where the rating is higher than 9.0. The percentage was calculated by having the number of directors that got more than a ranking of 9 for their movies divided by the total number of directors that year for a gender after tidying and joining the data. 
+
+```{r}
+years <- c(2001:2017)
+ggplot(table, aes(year, number, color= gender, fill = gender)) +
+  labs(title = 'Total Number of Directors Over Years')+
+  geom_bar(stat= "identity", position = "dodge")+
+  theme_stata()+
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5)) +
+  scale_x_continuous("years", labels = as.factor(years), breaks = years)+
+  scale_y_continuous(expand = c(0,0))
+```
+
+From this graph we can see that, The total number of male directors are generally ten times more than female directors. Plus, the gender disparity is getting bigger and bigger as years went on except for 2017.
+
+```{r}
+ggplot(table, aes(year, percentage, color = gender))+
+  labs(y = "percentage within gender", title = 'Directors With Highy-rated Movies')+
+  ylim(0, 100)+
+  geom_point()+
+  geom_line()+
+  theme_stata()+
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5)) +
+  scale_x_continuous("years", labels = as.factor(years), breaks = years)
+```
+
+According to the graph above, there was a big gap between the rate of female directors making highly-rated films and the rate of male directors in 2001. But women are catching up with men during the next two years. Generally speaking, the difference is rather minimal as it is around ten percent each year. Besides, we can see a decreasing trend of the rate of directors making movies that are highly rated. Our guess about the downward trend is that increasingly more people are joining this industry and movies by inexperienced directors may drag the rate down.
+
+##Conclusion
+There is a slight difference in the percentage of the male and female directors having good-rating movies and this trend has been converging overtime as we set the time frame from 2000 to 2017. We found that gender disparity does occur since the total number of male directors is significantly higher than the number of female directors, regardless of the rating. In fact, the difference between the total number of directors in two genders is giant and we do think that film industry should pay more attention on gender difference. One interesting founding deserves a comprehensive analysis is that there is a huge drop in the number of male director in 2017 which happens to be the year when #Metoo started to attract huge attention. Our best guess about the cause of this drop is #Metoo campaign. 
+
+One important counter-argument we found out in the published article online is that movies have increasing chance to get inflated rating due to the effect of Blind Voting. During the initial release of any movie, there is a lot of  biased votings due to the Blind voting effect (people give movies high ratings before they have even seen a film). The overall trend of the might be overrated, not being able to reflect the true quality of the movie anymore, and thus will have an increasing trend of high ratings. ^[[comments from internet](https://www.quora.com/Are-the-IMDB-ratings-accurate)] 
+
+However, what we found out after plotting the graph is that the overall trending of movies having high ratings is decreasing overtime, which conflicts to the article we were looking at. Our graph shows that the existence of movies with high ratings like 9.0+, regardless of the gender, has been decreasing overtime. 
+
+We also utilized Github to help us and we created a certain repository^[[Link](https://github.com/Taylorzzx/sds192mp4.git)] for this project. 
+
+> Word count: `r wordcountaddin::word_count()`
